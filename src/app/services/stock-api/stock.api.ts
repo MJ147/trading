@@ -7,9 +7,11 @@ import { Observable, of, tap } from 'rxjs';
 })
 export class StockApi {
 	readonly BASE_URL = 'https://www.alphavantage.co/';
-	readonly APIKEY = '2WRWY84SLT66Y6VU';
+	readonly APIKEY;
 
-	constructor(private http: HttpClient) {}
+	constructor(private http: HttpClient) {
+		this.APIKEY = this.storageApikey;
+	}
 
 	getStock(stockSymbol: string, fn: string): Observable<any> {
 		let params = new HttpParams().set('symbol', stockSymbol).set('function', fn);
@@ -25,5 +27,9 @@ export class StockApi {
 				localStorage.setItem(`${stockSymbol}/${fn}`, JSON.stringify(response));
 			}),
 		);
+	}
+
+	get storageApikey(): string {
+		return localStorage.getItem('apikey') || '';
 	}
 }
