@@ -7,26 +7,60 @@ import { Observable, of, tap } from 'rxjs';
 })
 export class StockApi {
 	readonly BASE_URL = 'https://www.alphavantage.co/';
-	readonly APIKEY;
+	readonly APIKEY =  '2WRWY84SLT66Y6VU';
 
-	constructor(private http: HttpClient) {
-		this.APIKEY = this.storageApikey;
-	}
+	constructor(private http: HttpClient) {}
 
-	getStock(stockSymbol: string, fn: string): Observable<any> {
-		let params = new HttpParams().set('symbol', stockSymbol).set('function', fn);
-		const cachedResponse = localStorage.getItem(`${stockSymbol}/${fn}`);
-		params = params.set('apikey', this.APIKEY);
+	getStock(stockSymbol: string, fn: string, forceRefresh = false): Observable<any> {
+		const cacheKey = `${stockSymbol}/${fn}`;
+		if (forceRefresh) {
+			localStorage.removeItem(cacheKey);
+		}
 
-		if (cachedResponse) return of(JSON.parse(cachedResponse));
+		const cachedResponse = localStorage.getItem(cacheKey);
+		const params = new HttpParams()
+			.set('symbol', stockSymbol)
+			.set('function', fn)
+			.set('apikey', this.APIKEY);
 
-		return this.http.get(`${this.BASE_URL}query?${params}`).pipe(
+		if (cachedResponse) {
+			try {
+				const parsed = JSON.parse(cachedResponse);
+				if (Object.hasOwn(parsed, 'Time Series (Daily)')) {
+					return of(parsed);
+				}
+
+				localStorage.removeItem(cacheKey);
+			} catch {
+				localStorage.removeItem(cacheKey);
+			}
+		}
+
+		return this.http.get(`${this.BASE_URL}query`, { params }).pipe(
 			tap((response) => {
-				if (!Object.hasOwn(response, 'Error Message')) return;
+				if (
+					Object.hasOwn(response, 'Error Message') ||
+					Object.hasOwn(response, 'Note') ||
+					!Object.hasOwn(response, 'Time Series (Daily)')
+				) {
+					return;
+				}
 
-				localStorage.setItem(`${stockSymbol}/${fn}`, JSON.stringify(response));
+				localStorage.setItem(cacheKey, JSON.stringify(response));
 			}),
 		);
+	}
+
+	hasCached(stockSymbol: string, fn: string): boolean {
+		const cacheKey = `${stockSymbol}/${fn}`;
+		try {
+			const raw = localStorage.getItem(cacheKey);
+			if (!raw) return false;
+			const parsed = JSON.parse(raw);
+			return Object.hasOwn(parsed, 'Time Series (Daily)');
+		} catch {
+			return false;
+		}
 	}
 
 	get storageApikey(): string {

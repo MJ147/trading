@@ -1,4 +1,5 @@
-
-<button mat-flat-button color="accent">Get stock data</button>
+<button mat-flat-button color="accent" (click)="loadStock()" [disabled]="isForecasting">
+	{{ isForecasting ? 'Training model...' : 'Train AI and forecast' }}
+</button>
 
 <canvas id="myChart" width="1500" height="800"></canvas>

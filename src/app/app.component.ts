@@ -1,13 +1,12 @@
 import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
-import { StockApi } from './services/stock-api/stock.api';
 import { MatButtonModule } from '@angular/material/button';
 import { Chart, registerables } from 'chart.js';
 import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial';
 import 'chartjs-adapter-date-fns';
+import { AiForecastService, ForecastPoint } from './services/ai-forecast/ai-forecast.service';
 
 interface CandlestickData {
-	x: Date;
+	x: number;
 	o: number;
 	h: number;
 	l: number;
@@ -17,80 +16,101 @@ interface CandlestickData {
 @Component({
 	selector: 'app-root',
 	standalone: true,
-	imports: [RouterOutlet, MatButtonModule],
+	imports: [MatButtonModule],
 	templateUrl: './app.component.html',
 	styleUrl: './app.component.less',
 })
 export class AppComponent {
 	title = 'trading';
-	// chart: any = null;
+	private chart: Chart | null = null;
+	isForecasting = false;
 
-	constructor(private stockApi: StockApi) {
+	constructor(private aiForecastService: AiForecastService) {
 		Chart.register(...registerables, CandlestickController, CandlestickElement);
 	}
 
 	ngOnInit(): void {
-		this.stockApi.getStock('IBM', 'TIME_SERIES_DAILY').subscribe((data) => {
-			const candleStickData = Object.entries(data['Time Series (Daily)']).map((entry: any) => ({
-				x: new Date(entry[0]),
-				o: entry[1]['1. open'],
-				h: entry[1]['2. high'],
-				l: entry[1]['3. low'],
-				c: entry[1]['4. close'],
-			}));
+		this.loadStock();
+	}
 
-			// thisdata.datasets[0].data = candleStickData;
-			// console.log(this.chart.data.datasets[0].data);
-			console.log(new Date('2023-08-01'));
-			this.createCandlestickChart(candleStickData);
+	async loadStock(): Promise<void> {
+		if (this.isForecasting) return;
+
+		this.isForecasting = true;
+		try {
+			const result = await this.aiForecastService.generateForecast('IBM', ['AAPL', 'MSFT', 'GOOGL'], 20, 20);
+			const candleStickData = this.toCandles(result.history);
+			this.createCandlestickChart(candleStickData, result.forecast);
+		} catch (error) {
+			console.error('AI forecast generation failed', error);
+		} finally {
+			this.isForecasting = false;
+		}
+	}
+
+	private toCandles(history: { x: number; close: number }[]): CandlestickData[] {
+		return history.map((point, index) => {
+			const prevClose = index > 0 ? history[index - 1].close : point.close;
+			const open = prevClose;
+			const close = point.close;
+
+			return {
+				x: point.x,
+				o: open,
+				h: Math.max(open, close),
+				l: Math.min(open, close),
+				c: close,
+			};
 		});
 	}
 
-	createCandlestickChart(candlestickData: any) {
+	createCandlestickChart(candlestickData: CandlestickData[], forecastData: ForecastPoint[]) {
 		const ctx = document.getElementById('myChart') as HTMLCanvasElement;
-		// console.log(candlestickData);
+		if (!ctx) {
+			console.error('Chart canvas not found');
+			return;
+		}
 
-		// const candlestickData = [
-		// 	{ x: new Date('2023-08-01'), o: 100, h: 110, l: 90, c: 105 },
-		// 	{ x: new Date('2023-08-02'), o: 105, h: 115, l: 95, c: 100 },
-		// 	{ x: new Date('2023-08-03'), o: 100, h: 108, l: 92, c: 95 },
-		// 	// Add more data points as needed
-		// ];
-
-		new Chart(ctx, {
+		this.chart?.destroy();
+		this.chart = new Chart(ctx, {
 			type: 'candlestick',
 			data: {
 				datasets: [
 					{
-						label: 'Candlestick Chart',
+						label: 'IBM History',
 						data: candlestickData,
 						barThickness: 5,
+					},
+					{
+						type: 'line',
+						label: 'AI Forecast',
+						data: forecastData,
+						borderColor: '#ff6b35',
+						backgroundColor: 'rgba(255, 107, 53, 0.2)',
+						borderWidth: 2,
+						pointRadius: 0,
+						tension: 0.2,
 					},
 				],
 			},
 			options: {
+				plugins: {
+					legend: {
+						display: true,
+					},
+				},
 				scales: {
 					x: {
 						type: 'time',
 						time: {
 							unit: 'day',
 						},
-						// offset: true,
-						// ticks: {
-						// 	stepSize: 10,
-						// 	padding: 20, // Adds padding between the ticks and the chart area
-						// },
-
-						// afterFit: (scale) => {
-						//     const
-						// 	scale.max = (new Date().setDate(new Date(scale.max).getTime() + 1))
-						// },
 					},
 					y: {
 						beginAtZero: false,
 					},
 				},
 			},
-		});
+		} as any);
 	}
 }
